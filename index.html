@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0f14" />
+    <meta name="description" content="Controla tus gastos, cuentas y metas de ahorro. 100% offline y privado." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Gastos" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Control de Gastos</title>
+    <script>
+      // Aplica el tema guardado antes de pintar para evitar parpadeo.
+      try {
+        if (localStorage.getItem('cg-theme') === 'light') {
+          document.documentElement.classList.remove('dark');
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f4f6f8');
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
