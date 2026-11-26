@@ -13,7 +13,7 @@ export default defineConfig({
       manifest: {
         name: 'Control de Gastos',
         short_name: 'Gastos',
-        description: 'Controla tus gastos, cuentas y metas de ahorro. 100% offline y privado.',
+        description: 'Controla tus gastos, cuentas y metas de ahorro con o sin conexión.',
         lang: 'es',
         start_url: '/',
         scope: '/',

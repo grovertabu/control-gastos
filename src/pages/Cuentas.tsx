@@ -4,7 +4,7 @@ import { PALETTE, type Account, type AccountKind } from '../db/db';
 import { deleteAccount, saveAccount } from '../db/actions';
 import { bs, num, parseAmount, round2 } from '../lib/format';
 import { accountBalances, reservedByAccount } from '../lib/stats';
-import { toast, useData, useUI } from '../lib/store';
+import { useDatabase, toast, useData, useUI } from '../lib/store';
 import { Empty } from '../components/ui';
 import { EditSheet, type EditConfig } from '../components/EditSheet';
 
@@ -16,6 +16,7 @@ const KIND_OPTIONS = [
 ];
 
 export function Cuentas() {
+  const db = useDatabase();
   const { accounts, transactions, contributions } = useData();
   const { openTx } = useUI();
   const [sheet, setSheet] = useState<EditConfig | null>(null);
@@ -46,12 +47,12 @@ export function Cuentas() {
         if (Number.isNaN(wanted)) return 'El saldo no es un número válido.';
         // El saldo se deriva de los movimientos: se ajusta el saldo inicial para llegar al valor deseado.
         const initialBalance = round2((a?.initialBalance ?? 0) + (wanted - balance));
-        await saveAccount({ name, kind: v.kind as AccountKind, color: String(v.color), initialBalance }, a?.id);
+        await saveAccount(db, { name, kind: v.kind as AccountKind, color: String(v.color), initialBalance }, a?.id);
         toast(a ? 'Cuenta actualizada' : 'Cuenta creada');
       },
       onDelete: a
         ? async () => {
-            await deleteAccount(a.id);
+            await deleteAccount(db, a.id);
             toast('Cuenta eliminada');
           }
         : undefined,

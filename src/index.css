@@ -87,3 +87,6 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .anim-fade, .anim-up, .anim-toast { animation: none; }
   * { transition: none !important; }
 }
+
+.cloud-dialog:modal { overscroll-behavior: contain; }
+.cloud-dialog::backdrop { background: rgb(0 0 0 / 0.65); overflow: hidden; overscroll-behavior: contain; }

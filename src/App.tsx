@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowLeft, LayoutDashboard, ListOrdered, Plus, Settings as SettingsIcon, Target, Wallet } from 'lucide-react';
 import { currentMonth, defaultDateFor } from './lib/format';
 import { DataProvider, UICtx, useData, type Tab, type TxDraft, type UI } from './lib/store';
@@ -9,6 +9,10 @@ import { Movimientos } from './pages/Movimientos';
 import { Cuentas } from './pages/Cuentas';
 import { Metas } from './pages/Metas';
 import { Ajustes } from './pages/Ajustes';
+import { localDatabase, type AppDB } from './db/db';
+
+const CloudGate = lazy(() => import('./cloud/CloudGate').then(({ CloudGate }) => ({ default: CloudGate })));
+const cloudEnabled = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
 const TABS: { id: Tab; label: string; icon: typeof Wallet }[] = [
   { id: 'resumen', label: 'Resumen', icon: LayoutDashboard },
@@ -19,15 +23,24 @@ const TABS: { id: Tab; label: string; icon: typeof Wallet }[] = [
 const TITLES: Record<Tab, string> = { resumen: 'Resumen', movimientos: 'Movimientos', cuentas: 'Cuentas', metas: 'Metas', ajustes: 'Ajustes' };
 
 export default function App() {
+  if (cloudEnabled) return (
+    <Suspense fallback={<main className="grid min-h-dvh place-items-center text-sm text-muted" role="status">Abriendo Control de Gastos…</main>}>
+      <CloudGate>{(db, controls) => <Workspace db={db} controls={controls} />}</CloudGate>
+    </Suspense>
+  );
+  return <Workspace db={localDatabase} />;
+}
+
+function Workspace({ db, controls }: { db: AppDB; controls?: ReactNode }) {
   return (
-    <DataProvider>
-      <Shell />
+    <DataProvider db={db}>
+      <Shell controls={controls} />
       <ToastHost />
     </DataProvider>
   );
 }
 
-function Shell() {
+function Shell({ controls }: { controls?: ReactNode }) {
   const { settings } = useData();
   const [tab, setTab] = useState<Tab>('resumen');
   const [lastTab, setLastTab] = useState<Tab>('resumen');
@@ -68,13 +81,16 @@ function Shell() {
                 <ArrowLeft size={22} />
               </button>
             )}
-            <h1 className="text-2xl font-bold tracking-tight">{TITLES[tab]}</h1>
+            <h1 className="text-xl font-bold tracking-tight min-[390px]:text-2xl">{TITLES[tab]}</h1>
           </div>
-          {tab !== 'ajustes' && (
-            <button className="icon-btn -mr-2" onClick={() => go('ajustes')} aria-label="Ajustes">
-              <SettingsIcon size={22} />
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {controls}
+            {tab !== 'ajustes' && (
+              <button className="icon-btn -mr-2" onClick={() => go('ajustes')} aria-label="Ajustes">
+                <SettingsIcon size={22} />
+              </button>
+            )}
+          </div>
         </header>
 
         <main className="px-4 pt-1 pb-[calc(8.5rem+env(safe-area-inset-bottom))]">

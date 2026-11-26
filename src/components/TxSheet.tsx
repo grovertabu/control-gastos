@@ -3,7 +3,7 @@ import { ArrowRight, Delete, Trash2 } from 'lucide-react';
 import { CAT_EXTRA, CAT_FIXED, CAT_SALARY, type TxType } from '../db/db';
 import { deleteTx, saveTx } from '../db/actions';
 import { num, todayISO } from '../lib/format';
-import { toast, useData, type TxDraft } from '../lib/store';
+import { useDatabase, toast, useData, type TxDraft } from '../lib/store';
 import { Segmented, Sheet } from './ui';
 
 const TYPE_OPTIONS: { value: TxType; label: string }[] = [
@@ -30,6 +30,7 @@ function showTyping(s: string): string {
 }
 
 function TxForm({ draft, onClose }: { draft: TxDraft; onClose: () => void }) {
+  const db = useDatabase();
   const { accounts, categories, settings, fixedExpenses } = useData();
   const isFixedPayment = !!draft.fixedExpenseId;
   const firstAccount = accounts.find((a) => a.id === settings.lastAccountId)?.id ?? accounts[0]?.id ?? '';
@@ -67,8 +68,7 @@ function TxForm({ draft, onClose }: { draft: TxDraft; onClose: () => void }) {
     if (!(value > 0)) return toast('Escribe un monto mayor a 0');
     if (!accountId) return toast('Primero crea una cuenta');
     if (type === 'transfer' && (!toAccountId || toAccountId === accountId)) return toast('Elige una cuenta destino distinta');
-    await saveTx(
-      {
+    await saveTx(db, {
         type, amount: value, accountId, note, date: date || todayISO(),
         toAccountId: type === 'transfer' ? toAccountId : undefined,
         categoryId: type === 'transfer' ? undefined : effectiveCategory,
@@ -170,7 +170,7 @@ function TxForm({ draft, onClose }: { draft: TxDraft; onClose: () => void }) {
             aria-label="Eliminar movimiento"
             onClick={async () => {
               if (!confirmDelete) return setConfirmDelete(true);
-              await deleteTx(draft.id!);
+              await deleteTx(db, draft.id!);
               toast('Movimiento eliminado');
               onClose();
             }}

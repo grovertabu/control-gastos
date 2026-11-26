@@ -101,7 +101,40 @@ export const PALETTE = [
   '#fb7185', '#34d399', '#fbbf24', '#38bdf8', '#c084fc', '#f97316',
 ];
 
-class AppDB extends Dexie {
+export type Snapshot = {
+  accounts: Account[];
+  categories: Category[];
+  transactions: Tx[];
+  fixedExpenses: FixedExpense[];
+  goals: Goal[];
+  contributions: Contribution[];
+  settings: SettingRow[];
+};
+
+export interface RemoteSnapshot {
+  revision: number;
+  data: Snapshot;
+  updatedAt: string;
+}
+
+export interface PendingSnapshot {
+  id: string;
+  revision: number;
+  generation: number;
+  data: Snapshot;
+}
+
+export interface SyncState {
+  key: 'snapshot';
+  revision: number;
+  generation: number;
+  syncedGeneration: number;
+  pending?: PendingSnapshot;
+  conflict?: RemoteSnapshot;
+  closing?: boolean;
+}
+
+export class AppDB extends Dexie {
   accounts!: Table<Account, string>;
   categories!: Table<Category, string>;
   transactions!: Table<Tx, string>;
@@ -110,8 +143,10 @@ class AppDB extends Dexie {
   contributions!: Table<Contribution, string>;
   settings!: Table<SettingRow, string>;
 
-  constructor() {
-    super('control-gastos');
+  syncState!: Table<SyncState, string>;
+
+  constructor(public readonly userId?: string) {
+    super(userId ? `control-gastos:${userId}` : 'control-gastos');
     this.version(1).stores({
       accounts: 'id, order',
       categories: 'id, kind, order',
@@ -121,7 +156,23 @@ class AppDB extends Dexie {
       contributions: 'id, goalId, accountId, month',
       settings: 'key',
     });
-    this.on('populate', () => seed(this));
+    if (userId) this.version(2).stores({ syncState: 'key' });
+    else this.on('populate', () => seed(this));
+  }
+
+  get dataTables() {
+    return TABLES.map((table) => this[table]);
+  }
+
+  write<T>(operation: () => Promise<T>) {
+    if (!this.userId) return this.transaction('rw', this.dataTables, operation);
+    return this.transaction('rw', [...this.dataTables, this.syncState], async () => {
+      const state = await this.syncState.get('snapshot');
+      if (!state || state.closing) throw new Error('Vuelve a iniciar sesión para guardar.');
+      const result = await operation();
+      await this.syncState.put({ ...state, generation: state.generation + 1 });
+      return result;
+    });
   }
 }
 
@@ -172,7 +223,16 @@ function seed(d: AppDB) {
   d.settings.bulkAdd(s.settings);
 }
 
-export const db = new AppDB();
+export function starterSnapshot(): Snapshot {
+  const { accounts, categories } = seedData();
+  const settings = { ...DEFAULT_SETTINGS, monthlyIncome: 0, variableLimit: 0 };
+  return {
+    accounts, categories, transactions: [], fixedExpenses: [], goals: [], contributions: [],
+    settings: Object.entries(settings).map(([key, value]) => ({ key, value })),
+  };
+}
+
+export const localDatabase = new AppDB();
 
 /** Id único que también funciona en contextos no seguros (http por Wi-Fi). */
 export function uid(): string {

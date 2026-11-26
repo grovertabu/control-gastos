@@ -4,7 +4,7 @@ import { PALETTE, SYSTEM_CATEGORIES, type Category, type FixedExpense } from '..
 import { deleteCategory, deleteFixed, resetAll, saveCategory, saveFixed, setSetting } from '../db/actions';
 import { buildCSV, buildJSON, exportCSV, exportJSON, importCSV, importJSON, shareFile } from '../db/backup';
 import { bs, num, parseAmount } from '../lib/format';
-import { toast, useData } from '../lib/store';
+import { useDatabase, toast, useData } from '../lib/store';
 import { Segmented } from '../components/ui';
 import { EditSheet, type EditConfig } from '../components/EditSheet';
 
@@ -32,6 +32,7 @@ function Section({ title, children, action }: { title: string; children: ReactNo
 }
 
 export function Ajustes() {
+  const db = useDatabase();
   const { settings, fixedExpenses, categories, accounts, transactions } = useData();
   const [sheet, setSheet] = useState<EditConfig | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -47,7 +48,7 @@ export function Ajustes() {
       onSubmit: async (v) => {
         const n = parseAmount(String(v.value));
         if (!(n >= 0)) return 'Escribe un monto válido.';
-        await setSetting(key, n);
+        await setSetting(db, key, n);
         toast('Guardado');
       },
     });
@@ -67,10 +68,10 @@ export function Ajustes() {
         const amount = parseAmount(String(v.amount));
         if (!name) return 'Ponle un nombre.';
         if (!(amount > 0)) return 'Escribe un monto mayor a 0.';
-        await saveFixed({ name, amount, accountId: String(v.account) || undefined, active: !!v.active }, f?.id);
+        await saveFixed(db, { name, amount, accountId: String(v.account) || undefined, active: !!v.active }, f?.id);
         toast('Guardado');
       },
-      onDelete: f ? async () => { await deleteFixed(f.id); toast('Gasto fijo eliminado'); } : undefined,
+      onDelete: f ? async () => { await deleteFixed(db, f.id); toast('Gasto fijo eliminado'); } : undefined,
       deleteHint: 'Los pagos ya registrados se conservan en tu historial.',
     });
 
@@ -87,25 +88,25 @@ export function Ajustes() {
       onSubmit: async (v) => {
         const name = String(v.name).trim();
         if (!name) return 'Ponle un nombre.';
-        await saveCategory({ name, color: String(v.color), kind: c?.kind ?? (v.kind as Category['kind']) }, c?.id);
+        await saveCategory(db, { name, color: String(v.color), kind: c?.kind ?? (v.kind as Category['kind']) }, c?.id);
         toast('Guardado');
       },
-      onDelete: c && !system ? async () => { await deleteCategory(c); toast('Categoría eliminada'); } : undefined,
+      onDelete: c && !system ? async () => { await deleteCategory(db, c); toast('Categoría eliminada'); } : undefined,
       deleteHint: 'Sus movimientos pasarán a "Otros".',
     });
   };
 
-  const setTheme = (theme: 'dark' | 'light') => void setSetting('theme', theme);
+  const setTheme = (theme: 'dark' | 'light') => void setSetting(db, 'theme', theme);
 
   const onFile = async (file: File | undefined, kind: 'json' | 'csv') => {
     if (!file) return;
     try {
       const text = await file.text();
       if (kind === 'json') {
-        const n = await importJSON(text);
+        const n = await importJSON(db, text);
         toast(`Respaldo restaurado (${n} movimientos)`);
       } else {
-        const { added, skipped } = await importCSV(text);
+        const { added, skipped } = await importCSV(db, text);
         toast(`${added} movimientos importados${skipped ? `, ${skipped} filas omitidas` : ''}`);
       }
     } catch (e) {
@@ -114,9 +115,9 @@ export function Ajustes() {
   };
 
   const share = async (kind: 'json' | 'csv') => {
-    const { filename, content } = kind === 'json' ? await buildJSON() : await buildCSV();
+    const { filename, content } = kind === 'json' ? await buildJSON(db) : await buildCSV(db);
     const ok = await shareFile(filename, content, kind === 'json' ? 'application/json' : 'text/csv');
-    if (!ok) await (kind === 'json' ? exportJSON() : exportCSV());
+    if (!ok) await (kind === 'json' ? exportJSON(db) : exportCSV(db));
   };
 
   const actionBtn = 'flex min-h-12 w-full items-center gap-3 px-4 py-2.5 text-left text-sm active:bg-surface-2';
@@ -162,11 +163,11 @@ export function Ajustes() {
 
       <Section title="Respaldo de datos">
         <p className="px-4 py-3 text-xs text-muted">
-          Tus datos viven solo en este dispositivo ({transactions.length} movimientos). Exporta un respaldo de vez en cuando y antes de cambiar de teléfono.
+          {transactions.length} movimientos en este dispositivo. Exporta un respaldo completo para conservar una copia que puedas restaurar.
         </p>
-        <button className={actionBtn} onClick={() => exportJSON().then(() => toast('Respaldo JSON descargado'))}><Download size={18} className="text-accent" /> Exportar respaldo completo (JSON)</button>
+        <button className={actionBtn} onClick={() => exportJSON(db).then(() => toast('Respaldo JSON descargado'))}><Download size={18} className="text-accent" /> Exportar respaldo completo (JSON)</button>
         <button className={actionBtn} onClick={() => jsonInput.current?.click()}><Upload size={18} className="text-accent" /> Importar respaldo (JSON) — reemplaza todo</button>
-        <button className={actionBtn} onClick={() => exportCSV().then(() => toast('CSV descargado'))}><Download size={18} className="text-accent" /> Exportar movimientos (CSV / Excel)</button>
+        <button className={actionBtn} onClick={() => exportCSV(db).then(() => toast('CSV descargado'))}><Download size={18} className="text-accent" /> Exportar movimientos (CSV / Excel)</button>
         <button className={actionBtn} onClick={() => csvInput.current?.click()}><Upload size={18} className="text-accent" /> Importar movimientos (CSV) — los agrega</button>
         {canShare && (
           <button className={actionBtn} onClick={() => share('json')}><Share2 size={18} className="text-accent" /> Compartir respaldo (Drive, WhatsApp, correo…)</button>
@@ -184,7 +185,7 @@ export function Ajustes() {
               setTimeout(() => setConfirmReset(false), 4000);
               return;
             }
-            await resetAll();
+            await resetAll(db);
             setConfirmReset(false);
             toast('Datos restablecidos');
           }}
@@ -195,7 +196,7 @@ export function Ajustes() {
       </Section>
 
       <p className="px-1 pb-4 text-center text-xs text-muted">
-        Control de Gastos v1.0 · Sin servidores, sin cuentas, sin rastreo.
+        Control de Gastos
         <br />
         Para instalarla: menú del navegador → "Agregar a pantalla de inicio".
       </p>

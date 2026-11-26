@@ -4,12 +4,13 @@ import { CAT_SALARY } from '../db/db';
 import { payFixed, setFixedAccount, setSetting, unpayFixed } from '../db/actions';
 import { addMonths, bs, currentMonth, daysLeft, defaultDateFor, monthShort, num, parseAmount } from '../lib/format';
 import { compareMonths, monthSummary } from '../lib/stats';
-import { toast, useData, useUI } from '../lib/store';
+import { useDatabase, toast, useData, useUI } from '../lib/store';
 import { Bar, Empty, MonthSwitcher, Segmented } from '../components/ui';
 import { Donut } from '../components/Donut';
 import { EditSheet, type EditConfig } from '../components/EditSheet';
 
 export function Resumen() {
+  const db = useDatabase();
   const data = useData();
   const { month, setMonth, openTx } = useUI();
   const [sheet, setSheet] = useState<EditConfig | null>(null);
@@ -36,7 +37,7 @@ export function Resumen() {
       onSubmit: async (v) => {
         const n = parseAmount(String(v.limit));
         if (!(n >= 0)) return 'Escribe un monto válido.';
-        await setSetting('variableLimit', n);
+        await setSetting(db, 'variableLimit', n);
       },
     });
 
@@ -48,7 +49,7 @@ export function Resumen() {
       onSubmit: async (v) => {
         const n = parseAmount(String(v.income));
         if (!(n >= 0)) return 'Escribe un monto válido.';
-        await setSetting('monthlyIncome', n);
+        await setSetting(db, 'monthlyIncome', n);
       },
     });
 
@@ -153,12 +154,12 @@ export function Resumen() {
                     className={`flex size-11 shrink-0 items-center justify-center rounded-full border-2 transition active:scale-90 ${paidTx ? 'border-accent bg-accent text-accent-ink' : 'border-line text-transparent'}`}
                     onClick={async () => {
                       if (paidTx) {
-                        await unpayFixed(f.id, month);
+                        await unpayFixed(db, f.id, month);
                         toast(`${f.name}: marcado como pendiente`);
                       } else if (!accId) {
                         toast('Primero crea una cuenta');
                       } else {
-                        await payFixed(f, month, defaultDateFor(month), accId);
+                        await payFixed(db, f, month, defaultDateFor(month), accId);
                         toast(`${f.name} pagado · ${bs(f.amount)}`);
                       }
                     }}
@@ -171,7 +172,7 @@ export function Resumen() {
                       className="mt-0.5 max-w-full truncate rounded-md bg-transparent py-1 text-xs text-muted"
                       aria-label={`Cuenta de pago de ${f.name}`}
                       value={accId}
-                      onChange={(e) => setFixedAccount(f.id, month, e.target.value)}
+                      onChange={(e) => setFixedAccount(db, f.id, month, e.target.value)}
                     >
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>

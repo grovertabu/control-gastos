@@ -1,7 +1,39 @@
 # Control de Gastos (PWA)
 
 App web progresiva para controlar gastos mensuales, cuentas bancarias y metas de ahorro en **Bolivianos (Bs)**.
-Offline-first y 100% privada: todo se guarda en IndexedDB dentro de tu teléfono. No hay servidor, cuentas ni rastreo.
+App local con IndexedDB (Dexie). La versión con cuenta de Google mantiene una copia por usuario en el dispositivo y sincroniza respaldos privados con Supabase.
+
+El piloto ya está publicado y el traspaso reúne la configuración para continuar el proyecto. [Abrir Control Gastos](https://control-gastos-2r6.pages.dev/) · [Traspaso para Claude Code](CLAUDE.md)
+
+## Configurar el piloto con Google
+
+1. Crea un proyecto **Supabase Free**. Ejecuta la [migración SQL](supabase/migrations/20261126020652_cloud_snapshots.sql) desde el SQL Editor o aplícala con `supabase db push` desde un proyecto enlazado.
+2. Configura **Authentication → Auth Hooks → Before User Created** con la función `private.check_pilot_signup`. Autoriza los correos en el SQL Editor. Habilita únicamente el proveedor Google y desactiva Email en el piloto.
+
+   ```sql
+   insert into private.pilot_invites (email) values ('correo@example.com') on conflict do nothing;
+   ```
+
+   Quitar el correo de `private.pilot_invites` revoca la sincronización en las sesiones existentes. Cada dispositivo guarda su copia hasta que el usuario cierre sesión.
+3. En Google Auth Platform, configura una aplicación **External**, con un cliente OAuth **Web application**. Usa los permisos `openid`, `email` y `profile`. En Google, añade el callback de Supabase (`https://<project-ref>.supabase.co/auth/v1/callback`). En Supabase, habilita Google y guarda allí el ID y el secreto del cliente. En **Authentication → URL Configuration**, registra la URL pública de la app como **Site URL** y `http://localhost:5173/` como redirección permitida durante desarrollo.
+4. Copia `.env.example` a `.env.local` y completa `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` con la URL y la **publishable key** del proyecto. La compilación incluye esos dos valores públicos. Guarda el secreto de Google y las claves de administración dentro de sus servicios.
+5. Publica la rama del piloto en **Cloudflare Pages Free**. Usa `npm run build` como comando, `dist` como salida y añade las dos variables `VITE_` al entorno de compilación. Para subir a mano, compila con las variables configuradas y despliega `dist/` en un proyecto existente con `npx wrangler pages deploy dist --project-name <proyecto>`. Añade el dominio HTTPS resultante a los orígenes autorizados del cliente Google y a las redirecciones de Supabase.
+
+Con las variables vacías, `npm run dev` abre el modo local de siempre. La primera sesión con Google necesita internet. Una vez activado el dispositivo, los cambios se guardan en Dexie incluso sin conexión. Al abrir la app o recuperar conexión, el indicador del encabezado muestra el estado de la nube. Si hay dos versiones, puedes descargar las dos antes de elegir.
+
+### Migrar y comprobar tus datos
+
+1. Desde la app anterior, abre **Ajustes → Exportar respaldo completo (JSON)**. Guarda el archivo, por ejemplo en Google Drive.
+2. En la URL HTTPS del piloto, entra con tu Google, activa el dispositivo e importa el JSON durante la preparación. Comprueba los movimientos, saldos, apartados y ajustes en bolivianos. Una cuenta nueva también puede empezar de cero.
+3. Abre el piloto en otro dispositivo con la misma cuenta. Comprueba que reciba el respaldo. Haz cambios en modo avión, vuelve a abrir la PWA y comprueba que siguen ahí. Reconecta y verifica el estado **Sincronizado**.
+4. Prueba dos invitados y un correo ajeno. Para probar conflictos, edita en dos dispositivos con la misma cuenta mientras ambos están sin conexión y reconéctalos de uno en uno. Descarga los dos JSON desde el panel de sincronización y comprueba la versión elegida.
+
+### Pruebas reproducibles
+
+- `npx playwright install chromium` y `npm run test:pilot` prueban la PWA compilada con cuentas y respuestas simuladas, incluyendo modo avión, reapertura y reintentos.
+- `psql -v ON_ERROR_STOP=1 -d <base-de-pruebas-vacía> -f tests/snapshots.sql` comprueba la migración, el aislamiento y las revisiones en PostgreSQL. Usa una base vacía de pruebas con un rol capaz de crear roles.
+
+Cada envío sincronizado guarda un JSON completo y un identificador de operación, que permite reintentos tras una interrupción. Las consultas con la revisión actual devuelven solo el estado. Durante el piloto, revisa el tamaño de los JSON exportados y la transferencia de Supabase en su panel de uso.
 
 **Stack:** React 19 + TypeScript + Vite + Tailwind CSS v4 + Dexie (IndexedDB) + vite-plugin-pwa (Workbox).
 
@@ -24,7 +56,7 @@ Abre `http://localhost:5173`. El comando también muestra una dirección `Networ
 
 > **Importante:** los navegadores solo permiten instalar una PWA y usarla sin conexión desde **HTTPS** (o `localhost`).
 > Por Wi-Fi con `http://192.168.x.x` la app funciona y guarda datos, pero no se instala ni trabaja offline.
-> Por eso el camino recomendado es la opción A. Tus datos siguen quedándose solo en el teléfono: el hosting solo entrega los archivos de la app.
+> La opción A publica los archivos de la app. La sincronización con Supabase se habilita con la configuración del piloto.
 
 ### Opción A — Desplegar gratis (recomendada, 2 minutos)
 
@@ -47,7 +79,7 @@ Después, en el celular:
 - **Android (Chrome):** abre la URL → menú ⋮ → **Agregar a pantalla de inicio / Instalar app**.
 - **iPhone (Safari):** abre la URL → botón Compartir → **Agregar a inicio**.
 
-Ábrela una vez con internet; desde ahí funciona sin conexión.
+Ábrela una vez con internet. Si usas Google, activa el dispositivo y prepara tu copia de datos antes de irte sin conexión.
 
 ### Opción B — Android por cable USB, sin subir nada
 

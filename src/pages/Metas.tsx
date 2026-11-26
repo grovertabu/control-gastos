@@ -4,11 +4,12 @@ import { PALETTE, type Goal } from '../db/db';
 import { contribute, deleteGoal, saveGoal } from '../db/actions';
 import { bs, num, parseAmount, todayISO } from '../lib/format';
 import { accountBalances, goalByAccount, reservedByAccount, savedByGoal } from '../lib/stats';
-import { toast, useData } from '../lib/store';
+import { useDatabase, toast, useData } from '../lib/store';
 import { Bar, Empty } from '../components/ui';
 import { EditSheet, type EditConfig } from '../components/EditSheet';
 
 export function Metas() {
+  const db = useDatabase();
   const { goals, contributions, accounts, transactions } = useData();
   const [sheet, setSheet] = useState<EditConfig | null>(null);
 
@@ -35,12 +36,12 @@ export function Metas() {
         const target = parseAmount(String(v.target));
         if (!name) return 'Ponle un nombre a la meta.';
         if (!(target > 0)) return 'Define un monto objetivo mayor a 0.';
-        await saveGoal({ name, target, emoji: String(v.emoji).trim() || '🎯', color: String(v.color) }, g?.id);
+        await saveGoal(db, { name, target, emoji: String(v.emoji).trim() || '🎯', color: String(v.color) }, g?.id);
         toast(g ? 'Meta actualizada' : 'Meta creada');
       },
       onDelete: g
         ? async () => {
-            await deleteGoal(g.id);
+            await deleteGoal(db, g.id);
             toast('Meta eliminada');
           }
         : undefined,
@@ -65,7 +66,7 @@ export function Metas() {
         if (!(amount > 0)) return 'Escribe un monto mayor a 0.';
         const free = freeOf(accId);
         if (amount > free + 0.001) return free > 0 ? `En esa cuenta solo tienes ${bs(free)} libres.` : 'Esa cuenta no tiene dinero libre. Registra un ingreso o transfiere dinero primero.';
-        await contribute(g.id, accId, amount, todayISO());
+        await contribute(db, g.id, accId, amount, todayISO());
         toast(`${bs(amount)} apartados para ${g.name}`);
       },
     });
@@ -89,7 +90,7 @@ export function Metas() {
         const max = perAccount.get(accId) ?? 0;
         if (!(amount > 0)) return 'Escribe un monto mayor a 0.';
         if (amount > max + 0.001) return `En esa cuenta la meta solo tiene ${bs(max)}.`;
-        await contribute(g.id, accId, -amount, todayISO());
+        await contribute(db, g.id, accId, -amount, todayISO());
         toast(`${bs(amount)} liberados`);
       },
     });

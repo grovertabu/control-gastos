@@ -1,4 +1,5 @@
-import { db, uid, TABLES, CAT_OTHER, CAT_EXTRA, PALETTE, type Tx, type TxType } from './db';
+import { uid, CAT_OTHER, CAT_EXTRA, PALETTE, type AppDB, type Snapshot, type Tx, type TxType } from './db';
+import { readSnapshot, replaceSnapshot, snapshotSchema } from './snapshot';
 import { parseAmount, todayISO } from '../lib/format';
 
 const APP_ID = 'control-gastos';
@@ -31,37 +32,45 @@ export async function shareFile(filename: string, content: string, mime: string)
 }
 
 // ---------- JSON (respaldo completo) ----------
-export async function buildJSON(): Promise<{ filename: string; content: string }> {
-  const data: Record<string, unknown[]> = {};
-  for (const t of TABLES) data[t] = await db[t].toArray();
+export function buildJSONFromSnapshot(data: Snapshot, label = 'respaldo') {
   const content = JSON.stringify({ app: APP_ID, version: 1, exportedAt: new Date().toISOString(), data }, null, 2);
-  return { filename: `control-gastos-respaldo-${todayISO()}.json`, content };
+  return { filename: `control-gastos-${label}-${todayISO()}.json`, content };
 }
 
-export async function exportJSON() {
-  const { filename, content } = await buildJSON();
+export async function buildJSON(db: AppDB) {
+  return buildJSONFromSnapshot(await readSnapshot(db));
+}
+
+export async function downloadSnapshot(data: Snapshot, label?: string) {
+  const { filename, content } = buildJSONFromSnapshot(data, label);
   await deliver(filename, content, 'application/json');
 }
 
-/** Reemplaza TODOS los datos por los del respaldo. Devuelve cuántos movimientos se restauraron. */
-export async function importJSON(text: string): Promise<number> {
-  let parsed: { app?: string; data?: Record<string, unknown[]> };
+export async function exportJSON(db: AppDB) {
+  await downloadSnapshot(await readSnapshot(db));
+}
+
+export function parseBackup(text: string): Snapshot {
+  let parsed: { app?: string; version?: number; data?: unknown } | null;
   try {
     parsed = JSON.parse(text);
   } catch {
     throw new Error('El archivo no es un JSON válido.');
   }
-  if (parsed?.app !== APP_ID || !parsed.data) throw new Error('Este archivo no es un respaldo de Control de Gastos.');
-  const data = parsed.data;
-  for (const t of ['accounts', 'categories', 'transactions'] as const) {
-    if (!Array.isArray(data[t])) throw new Error(`El respaldo está incompleto (falta "${t}").`);
+  if (parsed?.app !== APP_ID || !parsed.data || (parsed.version !== 1 && parsed.version !== undefined)) {
+    throw new Error('Este archivo no es un respaldo compatible de Control de Gastos.');
   }
-  await db.transaction('rw', TABLES.map((t) => db[t]), async () => {
-    for (const t of TABLES) {
-      await db[t].clear();
-      if (Array.isArray(data[t])) await (db[t] as import('dexie').Table).bulkPut(data[t]);
-    }
-  });
+  const result = snapshotSchema.safeParse(parsed.data);
+  if (!result.success) {
+    const field = result.error.issues[0]?.path[0];
+    throw new Error(field ? `El respaldo contiene datos inválidos en «${String(field)}».` : 'El respaldo está incompleto.');
+  }
+  return result.data;
+}
+
+export async function importJSON(db: AppDB, text: string): Promise<number> {
+  const data = parseBackup(text);
+  await db.write(() => replaceSnapshot(db, data));
   return data.transactions.length;
 }
 
@@ -71,10 +80,9 @@ const TYPE_ES: Record<TxType, string> = { expense: 'gasto', income: 'ingreso', t
 
 const esc = (v: string) => (/[",\n;]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
-export async function buildCSV(): Promise<{ filename: string; content: string }> {
-  const [txs, accounts, categories] = await Promise.all([
-    db.transactions.orderBy('date').toArray(), db.accounts.toArray(), db.categories.toArray(),
-  ]);
+export async function buildCSV(db: AppDB): Promise<{ filename: string; content: string }> {
+  const { transactions, accounts, categories } = await readSnapshot(db);
+  const txs = transactions.sort((a, b) => a.date.localeCompare(b.date));
   const acc = new Map(accounts.map((a) => [a.id, a.name]));
   const cat = new Map(categories.map((c) => [c.id, c.name]));
   const rows = txs.map((t) => [
@@ -85,8 +93,8 @@ export async function buildCSV(): Promise<{ filename: string; content: string }>
   return { filename: `control-gastos-movimientos-${todayISO()}.csv`, content: '﻿' + [CSV_HEAD.join(','), ...rows].join('\n') };
 }
 
-export async function exportCSV() {
-  const { filename, content } = await buildCSV();
+export async function exportCSV(db: AppDB) {
+  const { filename, content } = await buildCSV(db);
   await deliver(filename, content, 'text/csv;charset=utf-8');
 }
 
@@ -119,7 +127,7 @@ function parseCSV(text: string): string[][] {
 const norm = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 /** Agrega movimientos desde un CSV (no borra nada). Crea cuentas/categorías que no existan. */
-export async function importCSV(text: string): Promise<{ added: number; skipped: number }> {
+export async function importCSV(db: AppDB, text: string): Promise<{ added: number; skipped: number }> {
   const rows = parseCSV(text);
   if (rows.length < 2) throw new Error('El CSV está vacío.');
   const head = rows[0].map(norm);
@@ -131,7 +139,7 @@ export async function importCSV(text: string): Promise<{ added: number; skipped:
   }
 
   let added = 0, skipped = 0;
-  await db.transaction('rw', db.transactions, db.accounts, db.categories, async () => {
+  await db.write(async () => {
     const accounts = await db.accounts.toArray();
     const categories = await db.categories.toArray();
 

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Check, Trash2 } from 'lucide-react';
+import { useRef, useState, type FormEvent } from 'react';
+import { Check, LoaderCircle, Trash2 } from 'lucide-react';
 import { PALETTE } from '../db/db';
 import { Sheet } from './ui';
 
@@ -41,10 +41,15 @@ function Form({ config, onClose }: { config: EditConfig; onClose: () => void }) 
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const set = (k: string, val: string | boolean) => setV((p) => ({ ...p, [k]: val }));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (submitting.current) return;
+
+    submitting.current = true;
+    setError('');
     setBusy(true);
     try {
       const err = await config.onSubmit(v);
@@ -53,6 +58,7 @@ function Form({ config, onClose }: { config: EditConfig; onClose: () => void }) 
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : 'No se pudo guardar.');
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -103,13 +109,18 @@ function Form({ config, onClose }: { config: EditConfig; onClose: () => void }) 
 
       {error && <p className="rounded-xl bg-bad/15 px-3 py-2 text-sm text-bad" role="alert">{error}</p>}
 
-      <button type="submit" className="btn btn-primary w-full" disabled={busy}>{config.submitLabel ?? 'Guardar'}</button>
+      <p className="sr-only" role="status">{busy ? 'Guardando cambios…' : ''}</p>
+      <button type="submit" className="btn btn-primary w-full" disabled={busy} aria-busy={busy}>
+        {busy && <LoaderCircle size={18} className="motion-safe:animate-spin" aria-hidden="true" />}
+        {busy ? 'Guardando…' : config.submitLabel ?? 'Guardar'}
+      </button>
 
       {config.onDelete && (
         <div>
           <button
             type="button"
             className="btn btn-danger w-full"
+            disabled={busy}
             onClick={async () => {
               if (!confirmDelete) return setConfirmDelete(true);
               await config.onDelete?.();

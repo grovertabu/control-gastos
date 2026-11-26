@@ -1,13 +1,20 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, DEFAULT_SETTINGS, type Settings, type TxType } from '../db/db';
+import { DEFAULT_SETTINGS, type AppDB, type Settings, type TxType } from '../db/db';
 import type { AppData } from './stats';
 
 // ---------- Datos (reactivos a IndexedDB) ----------
+const DatabaseCtx = createContext<AppDB | null>(null);
 const DataCtx = createContext<AppData | null>(null);
 
-export function DataProvider({ children }: { children: ReactNode }) {
-  const raw = useLiveQuery(async () => {
+export function useDatabase() {
+  const db = useContext(DatabaseCtx);
+  if (!db) throw new Error('useDatabase fuera de DataProvider');
+  return db;
+}
+
+export function DataProvider({ db, children }: { db: AppDB; children: ReactNode }) {
+  const raw = useLiveQuery(() => db.transaction('r', db.dataTables, async () => {
     const [accounts, categories, transactions, fixedExpenses, goals, contributions, settingRows] = await Promise.all([
       db.accounts.orderBy('order').toArray(),
       db.categories.orderBy('order').toArray(),
@@ -18,7 +25,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       db.settings.toArray(),
     ]);
     return { accounts, categories, transactions, fixedExpenses, goals, contributions, settingRows };
-  }, []);
+  }), [db]);
 
   const data = useMemo<AppData | null>(() => {
     if (!raw) return null;
@@ -37,7 +44,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  return <DataCtx.Provider value={data}>{children}</DataCtx.Provider>;
+  return <DatabaseCtx.Provider value={db}><DataCtx.Provider value={data}>{children}</DataCtx.Provider></DatabaseCtx.Provider>;
 }
 
 export function useData(): AppData {
